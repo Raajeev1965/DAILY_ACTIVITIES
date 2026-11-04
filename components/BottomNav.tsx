@@ -17,7 +17,7 @@ export function BottomNav({ active, onChange }: { active: Tab; onChange: (t: Tab
   return (
     <nav
       aria-label="Primary"
-      className="pb-safe fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-md border-t border-zinc-200 bg-white/90 px-1 pt-2 backdrop-blur dark:border-zinc-800 dark:bg-ink-night/90 md:absolute md:rounded-b-[2rem]"
+      className="pb-safe shrink-0 border-t border-zinc-200 bg-white px-1 pt-2 dark:border-zinc-800 dark:bg-ink-night"
     >
       <ul className="grid grid-cols-5">
         {items.map(({ id, label, Icon }) => {
