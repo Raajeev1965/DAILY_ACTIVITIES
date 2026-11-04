@@ -7,6 +7,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { QuickInput } from "@/components/QuickInput";
 import { Timeline } from "@/components/Timeline";
 import { HabitList } from "@/components/HabitList";
+import { Wallet } from "@/components/Wallet";
 import { SearchArchive } from "@/components/SearchArchive";
 import { Analytics } from "@/components/Analytics";
 import { dateKey } from "@/lib/utils";
@@ -14,6 +15,7 @@ import { dateKey } from "@/lib/utils";
 const titles: Record<Tab, string> = {
   today: "Today",
   habits: "Habits",
+  wallet: "Wallet",
   search: "Archive",
   stats: "Summary",
 };
@@ -53,6 +55,7 @@ function Shell() {
               </div>
             )}
             {tab === "habits" && <HabitList />}
+            {tab === "wallet" && <Wallet />}
             {tab === "search" && <SearchArchive />}
             {tab === "stats" && <Analytics />}
           </>

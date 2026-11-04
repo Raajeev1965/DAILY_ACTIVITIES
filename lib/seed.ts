@@ -1,4 +1,4 @@
-import type { AppState, Category } from "./types";
+import type { AppState, Category, Head, Transaction } from "./types";
 import { dateKey, uid } from "./utils";
 
 function at(daysAgo: number, hour: number, minute: number): string {
@@ -38,15 +38,14 @@ export function createSeed(): AppState {
     n(3, 12, 0, "Personal", "Booked dentist appointment for Friday"),
   ];
 
-  // Deterministic-looking history for the past week; today is partly done.
   const pattern: string[][] = [
-    ["h-water", "h-move", "h-read", "h-calm", "h-plan"], // 6 days ago
+    ["h-water", "h-move", "h-read", "h-calm", "h-plan"],
     ["h-water", "h-read", "h-calm"],
     ["h-water", "h-move", "h-read", "h-plan"],
     ["h-water", "h-move", "h-calm", "h-plan"],
     ["h-water", "h-move", "h-read", "h-calm"],
-    ["h-water", "h-read", "h-calm", "h-plan"], // yesterday
-    ["h-water", "h-calm"], // today
+    ["h-water", "h-read", "h-calm", "h-plan"],
+    ["h-water", "h-calm"],
   ];
   const completions: Record<string, string[]> = {};
   pattern.forEach((ids, i) => {
@@ -55,5 +54,27 @@ export function createSeed(): AppState {
     completions[dateKey(d)] = ids;
   });
 
-  return { notes, habits, completions };
+  const ex = (daysAgo: number, h: number, m: number, head: Head, amount: number, note: string, source: "text" | "voice" = "voice"): Transaction => ({
+    id: uid(), type: "expense", amount, head, note, createdAt: at(daysAgo, h, m), source,
+  });
+  const inc = (daysAgo: number, h: number, m: number, amount: number, note: string): Transaction => ({
+    id: uid(), type: "income", amount, head: null, note, createdAt: at(daysAgo, h, m), source: "text",
+  });
+
+  const transactions: Transaction[] = [
+    inc(12, 10, 0, 30000, "Salary received"),
+    ex(6, 18, 10, "Grocery", 640, "Vegetables and fruits"),
+    ex(6, 19, 30, "Fuel", 500, "Petrol"),
+    ex(5, 9, 15, "Communication", 299, "Mobile recharge"),
+    ex(4, 11, 40, "Health", 420, "Pharmacy medicines"),
+    ex(4, 17, 5, "Grocery", 380, "Milk and bread"),
+    ex(3, 10, 30, "Bills", 1850, "Electricity bill"),
+    inc(3, 15, 0, 2500, "Freelance payment received"),
+    ex(2, 8, 50, "Fuel", 600, "Petrol"),
+    ex(2, 13, 20, "Miscellaneous", 150, "Parking and tea"),
+    ex(1, 18, 0, "Grocery", 520, "Weekly groceries"),
+    ex(0, 8, 5, "Grocery", 85, "Milk"),
+  ];
+
+  return { notes, habits, completions, transactions, startingBalance: 12000 };
 }

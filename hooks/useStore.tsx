@@ -4,7 +4,7 @@ import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { useLocalStorage } from "./useLocalStorage";
 import { createSeed } from "@/lib/seed";
 import { dateKey, parseCategory, uid } from "@/lib/utils";
-import type { AppState, Category, Note } from "@/lib/types";
+import type { AppState, Category, Head, Note, Transaction } from "@/lib/types";
 
 interface Store {
   ready: boolean;
@@ -14,20 +14,26 @@ interface Store {
   toggleHabit: (habitId: string, day?: string) => void;
   addHabit: (name: string, emoji?: string) => void;
   deleteHabit: (id: string) => void;
+  addTransaction: (t: Omit<Transaction, "id" | "createdAt">) => void;
+  deleteTransaction: (id: string) => void;
+  setTransactionHead: (id: string, head: Head) => void;
+  setStartingBalance: (amount: number) => void;
   resetDemo: () => void;
 }
 
-const empty: AppState = { notes: [], habits: [], completions: {} };
+const empty: AppState = { notes: [], habits: [], completions: {}, transactions: [], startingBalance: 0 };
+// Older saved data has no wallet fields, so fill in any that are missing.
+const norm = (s: AppState): AppState => ({ ...empty, ...s });
 const StoreContext = createContext<Store | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [stored, setStored] = useLocalStorage<AppState>("dailylog:v1", createSeed);
 
   const store = useMemo<Store>(() => {
-    const update = (fn: (s: AppState) => AppState) => setStored((s) => (s ? fn(s) : s));
+    const update = (fn: (s: AppState) => AppState) => setStored((s) => (s ? fn(norm(s)) : s));
     return {
       ready: stored !== null,
-      state: stored ?? empty,
+      state: stored ? norm(stored) : empty,
       addNote: (text, fallback, source = "text") => {
         const parsed = parseCategory(text, fallback);
         if (!parsed.text) return;
@@ -47,6 +53,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         update((s) => ({ ...s, habits: [...s.habits, { id: uid(), name: trimmed, emoji }] }));
       },
       deleteHabit: (id) => update((s) => ({ ...s, habits: s.habits.filter((h) => h.id !== id) })),
+      addTransaction: (t) => {
+        const tx: Transaction = { ...t, id: uid(), createdAt: new Date().toISOString() };
+        update((s) => ({ ...s, transactions: [tx, ...s.transactions] }));
+      },
+      deleteTransaction: (id) => update((s) => ({ ...s, transactions: s.transactions.filter((t) => t.id !== id) })),
+      setTransactionHead: (id, head) =>
+        update((s) => ({ ...s, transactions: s.transactions.map((t) => (t.id === id ? { ...t, head } : t)) })),
+      setStartingBalance: (amount) => update((s) => ({ ...s, startingBalance: amount })),
       resetDemo: () => setStored(createSeed()),
     };
   }, [stored, setStored]);
