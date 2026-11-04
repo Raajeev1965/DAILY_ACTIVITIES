@@ -7,37 +7,82 @@ import { CATEGORIES, type Category } from "@/lib/types";
 import { categoryStyle } from "@/lib/categories";
 import { cn } from "@/lib/utils";
 
-const DICTATION_SAMPLES = [
-  "Remember to follow up with the design team about the new onboarding flow",
-  "Felt much more focused after the afternoon walk",
-  "Idea: a weekly recap that highlights the habits I kept up",
-  "Grocery run tonight: eggs, spinach, oat milk",
-];
+/* eslint-disable @typescript-eslint/no-explicit-any */
+interface Recognizer {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  start(): void;
+  stop(): void;
+  onresult: ((e: any) => void) | null;
+  onerror: ((e: any) => void) | null;
+  onend: (() => void) | null;
+}
 
 export function QuickInput() {
   const { addNote } = useStore();
   const [text, setText] = useState("");
   const [category, setCategory] = useState<Category>("Personal");
   const [listening, setListening] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [error, setError] = useState("");
+  const recRef = useRef<Recognizer | null>(null);
+  const baseRef = useRef("");
+  const voiceRef = useRef(false);
 
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  useEffect(() => () => recRef.current?.stop(), []);
 
   const submit = () => {
     if (!text.trim()) return;
-    addNote(text, category);
+    recRef.current?.stop();
+    addNote(text, category, voiceRef.current ? "voice" : "text");
+    voiceRef.current = false;
     setText("");
+    setError("");
   };
 
-  // Simulated dictation: "listens" briefly, then adds a sample transcript.
   const dictate = () => {
-    if (listening) return;
-    setListening(true);
-    timer.current = setTimeout(() => {
-      const phrase = DICTATION_SAMPLES[Math.floor(Math.random() * DICTATION_SAMPLES.length)];
-      addNote(phrase, category, "voice");
+    if (listening) {
+      recRef.current?.stop();
+      return;
+    }
+    const w = window as any;
+    const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!Ctor) {
+      setError("Voice input isn't supported in this browser. Try Chrome, Edge or Safari.");
+      return;
+    }
+    setError("");
+    const rec: Recognizer = new Ctor();
+    rec.lang = navigator.language || "en-US"; // e.g. set "hi-IN" or "gu-IN" to force a language
+    rec.interimResults = true;
+    rec.continuous = false;
+    baseRef.current = text ? text.trimEnd() + " " : "";
+
+    rec.onresult = (e: any) => {
+      let transcript = "";
+      for (let i = 0; i < e.results.length; i++) transcript += e.results[i][0].transcript;
+      voiceRef.current = true;
+      setText(baseRef.current + transcript);
+    };
+    rec.onerror = (e: any) => {
       setListening(false);
-    }, 1600);
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        setError("Microphone access is blocked. Allow it in your browser's site settings.");
+      } else if (e.error === "no-speech") {
+        setError("Didn't catch anything. Tap the mic and try again.");
+      } else {
+        setError("Voice input failed. Try again.");
+      }
+    };
+    rec.onend = () => setListening(false);
+
+    recRef.current = rec;
+    try {
+      rec.start();
+      setListening(true);
+    } catch {
+      setListening(false);
+    }
   };
 
   return (
@@ -56,6 +101,11 @@ export function QuickInput() {
         aria-label="Note text"
         className="w-full resize-none bg-transparent px-1 py-1 text-base placeholder:text-zinc-400 focus:outline-none"
       />
+      {error && (
+        <p role="alert" className="px-1 pb-1 text-xs font-medium text-red-600 dark:text-red-400">
+          {error}
+        </p>
+      )}
       <div className="mt-2 flex items-center gap-2">
         <div className="flex flex-1 gap-1.5 overflow-x-auto" role="radiogroup" aria-label="Category">
           {CATEGORIES.map((c) => (
@@ -76,7 +126,8 @@ export function QuickInput() {
         </div>
         <button
           onClick={dictate}
-          aria-label={listening ? "Listening" : "Dictate a note"}
+          aria-label={listening ? "Stop dictation" : "Dictate a note"}
+          aria-pressed={listening}
           className={cn(
             "grid h-10 w-10 shrink-0 place-items-center rounded-full transition-colors",
             listening ? "mic-live bg-red-500 text-white" : "bg-zinc-100 text-ink dark:bg-zinc-800 dark:text-zinc-100"
