@@ -25,26 +25,42 @@ export function QuickInput() {
   const [category, setCategory] = useState<Category>("Personal");
   const [listening, setListening] = useState(false);
   const [error, setError] = useState("");
+
   const recRef = useRef<Recognizer | null>(null);
-  const baseRef = useRef("");
+  const wantRef = useRef(false); // true until the user taps the mic to stop
+  const textRef = useRef(""); // always the latest text, readable inside callbacks
+  const baseRef = useRef(""); // text that existed before the current recognition session
   const voiceRef = useRef(false);
 
-  useEffect(() => () => recRef.current?.stop(), []);
+  const updateText = (v: string) => {
+    textRef.current = v;
+    setText(v);
+  };
+
+  const stopListening = () => {
+    wantRef.current = false;
+    recRef.current?.stop();
+    setListening(false);
+  };
+
+  useEffect(
+    () => () => {
+      wantRef.current = false;
+      recRef.current?.stop();
+    },
+    []
+  );
 
   const submit = () => {
-    if (!text.trim()) return;
-    recRef.current?.stop();
-    addNote(text, category, voiceRef.current ? "voice" : "text");
+    if (!textRef.current.trim()) return;
+    stopListening();
+    addNote(textRef.current, category, voiceRef.current ? "voice" : "text");
     voiceRef.current = false;
-    setText("");
+    updateText("");
     setError("");
   };
 
-  const dictate = () => {
-    if (listening) {
-      recRef.current?.stop();
-      return;
-    }
+  const startListening = () => {
     const w = window as any;
     const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
     if (!Ctor) {
@@ -52,44 +68,74 @@ export function QuickInput() {
       return;
     }
     setError("");
+
     const rec: Recognizer = new Ctor();
-    rec.lang = navigator.language || "en-US"; // e.g. set "hi-IN" or "gu-IN" to force a language
+    rec.lang = navigator.language || "en-US"; // e.g. "hi-IN" or "gu-IN" to force a language
     rec.interimResults = true;
-    rec.continuous = false;
-    baseRef.current = text ? text.trimEnd() + " " : "";
+    // Android Chrome repeats words in continuous mode, so it relies on auto-restart instead.
+    rec.continuous = !/Android/i.test(navigator.userAgent);
+
+    const rebase = () => {
+      const t = textRef.current;
+      baseRef.current = t ? t.trimEnd() + " " : "";
+    };
+    rebase();
 
     rec.onresult = (e: any) => {
       let transcript = "";
       for (let i = 0; i < e.results.length; i++) transcript += e.results[i][0].transcript;
       voiceRef.current = true;
-      setText(baseRef.current + transcript);
+      updateText(baseRef.current + transcript.trimStart());
     };
+
     rec.onerror = (e: any) => {
+      if (e.error === "no-speech" || e.error === "aborted") return; // pauses are fine, keep going
+      wantRef.current = false;
       setListening(false);
       if (e.error === "not-allowed" || e.error === "service-not-allowed") {
         setError("Microphone access is blocked. Allow it in your browser's site settings.");
-      } else if (e.error === "no-speech") {
-        setError("Didn't catch anything. Tap the mic and try again.");
+      } else if (e.error === "network") {
+        setError("Voice input needs an internet connection.");
       } else {
-        setError("Voice input failed. Try again.");
+        setError("Voice input stopped. Tap the mic to try again.");
       }
     };
-    rec.onend = () => setListening(false);
+
+    // The browser ends a session after a pause. Start a new one unless the user stopped it.
+    rec.onend = () => {
+      if (!wantRef.current) {
+        setListening(false);
+        return;
+      }
+      rebase();
+      setTimeout(() => {
+        if (!wantRef.current) return;
+        try {
+          rec.start();
+        } catch {
+          /* already started */
+        }
+      }, 150);
+    };
 
     recRef.current = rec;
+    wantRef.current = true;
     try {
       rec.start();
       setListening(true);
     } catch {
+      wantRef.current = false;
       setListening(false);
     }
   };
+
+  const toggleMic = () => (listening ? stopListening() : startListening());
 
   return (
     <section aria-label="Add a note" className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-zinc-200 dark:bg-ink-raised dark:ring-zinc-800">
       <textarea
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => updateText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
@@ -97,7 +143,7 @@ export function QuickInput() {
           }
         }}
         rows={2}
-        placeholder={listening ? "Listening…" : "What's happening? Add #Work, #Health…"}
+        placeholder={listening ? "Listening… tap the mic to stop" : "What's happening? Add #Work, #Health…"}
         aria-label="Note text"
         className="w-full resize-none bg-transparent px-1 py-1 text-base placeholder:text-zinc-400 focus:outline-none"
       />
@@ -125,7 +171,7 @@ export function QuickInput() {
           ))}
         </div>
         <button
-          onClick={dictate}
+          onClick={toggleMic}
           aria-label={listening ? "Stop dictation" : "Dictate a note"}
           aria-pressed={listening}
           className={cn(
